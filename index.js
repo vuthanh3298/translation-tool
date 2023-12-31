@@ -5,8 +5,9 @@ const traverse = require('@babel/traverse').default;
 const generate = require('@babel/generator').default;
 const t = require('@babel/types');
 const prettier = require('prettier');
+const specFields = require('./config.js');
 
-const newTranslations = {}; // Object lưu trữ các new translate text
+let newTranslations = {}; // Object lưu trữ các new translate text
 
 function isFunctionComponent(node) {
   return (
@@ -45,6 +46,8 @@ function processComponents(fileContent, filePath) {
   let exportDefaultFunctionName = null;
   let exportUniqueFunctionName = null;
 
+  const topLevelFunctions = [];
+
   // Duyệt qua các nodes để tìm import { useTranslation } từ 'react-i18next'
   traverse(ast, {
     ImportDeclaration(path) {
@@ -57,18 +60,28 @@ function processComponents(fileContent, filePath) {
         });
       }
     },
-    ExportDefaultDeclaration(path) {
-      const declaration = path.node.declaration;
-      if (declaration && isFunctionComponent(declaration)) {
-        exportDefaultFunctionName = declaration.id.name;
-      }
-    },
-    ExportNamedDeclaration(path) {
-      const declaration = path.node.declaration;
-      if (declaration && isFunctionComponent(declaration)) {
-        exportUniqueFunctionName = declaration.id.name;
-      }
-    },
+    // ExportDefaultDeclaration(path) {
+    //   const declaration = path.node.declaration;
+    //   if (declaration && isFunctionComponent(declaration)) {
+    //     exportDefaultFunctionName = declaration.id.name;
+    //   }
+    // },
+    // ExportNamedDeclaration(path) {
+    //   const declaration = path.node.declaration;
+    //   if (declaration && isFunctionComponent(declaration)) {
+    //     exportUniqueFunctionName = declaration.id.name;
+    //   }
+    // },
+    // FunctionDeclaration(path) {
+    //   if (!path.findParent(path => path.isFunction())) {
+    //     topLevelFunctions.push(path.node);
+    //   }
+    // },
+    // FunctionExpression(path) {
+    //   if (!path.findParent(path => path.isFunction())) {
+    //     topLevelFunctions.push(path.node);
+    //   }
+    // },
   });
 
   console.log({ isUseTranslationImported });
@@ -78,74 +91,89 @@ function processComponents(fileContent, filePath) {
     content = newImportStatement + content;
   }
 
-  const mainComponentName = exportDefaultFunctionName || exportUniqueFunctionName;
-  console.log({ mainComponentName });
+  // const mainComponentName = exportDefaultFunctionName || exportUniqueFunctionName;
+  // console.log({ mainComponentName });
 
-  // Duyệt qua các nodes để tìm biến 't' được khai báo trong function component
   let isTDeclared = false;
 
   ast = parser.parse(content, {
     sourceType: 'module',
     plugins: ['jsx'],
   });
-  traverse(ast, {
-    FunctionDeclaration(path) {
-      if (path.node.id.name === mainComponentName) {
-        path.traverse({
-          VariableDeclarator(innerPath) {
-            if (
-              innerPath.node.id.type === 'ObjectPattern' &&
-              innerPath.node.id.properties.some(property => property.key.name === 't')
-            ) {
-              isTDeclared = true;
+
+  function handleComponent(path) {
+    if (!path.findParent(path => path.isFunction())) { // function cấp 1
+      path.traverse({
+        VariableDeclarator(innerPath) {
+          if (
+            innerPath.node.id.type === 'ObjectPattern' &&
+            innerPath.node.id.properties.some(property => property.key.name === 't')
+          ) {
+            isTDeclared = true;
+          }
+        },
+      });
+    }
+
+    path.traverse({
+      JSXElement(jsxPath) {
+        // Tìm các JSXText nodes
+        const tagName = jsxPath.node.openingElement.name.name;
+        // if (specFields[tagName]) {
+        //   jsxPath.traverse({
+        //     JSXAttribute(attrPath) {
+        //       if (specFields[tagName].includes(attrPath.node.name.name)) {
+        //         const attrValue = attrPath.node.value;
+        //         const expression = attrValue.expression;
+        //         if (attrValue) {
+        //           if (attrValue.type === 'StringLiteral') {
+        //             const textValue = attrValue.value;
+        //             attrPath.node.value = createTranslationFunction(textValue);
+        //           } else if (attrValue.type === 'JSXExpressionContainer') {
+        //             if (expression.type === 'StringLiteral') {
+        //               const textValue = expression.value;
+        //               attrPath.node.value = createTranslationFunction(textValue);
+        //             } else if (expression.type === 'Identifier') {
+        //               const identifierName = expression.name;
+        //               attrPath.node.value = createTranslationFunction(identifierName, 'var');
+        //             } else if (expression.type === 'MemberExpression' || expression.type === 'TemplateLiteral') {
+        //               const memberExpression = generate(expression).code;
+        //               attrPath.node.value = createTranslationFunction(memberExpression, 'var');
+        //             }
+        //           }
+        //         }
+        //       }
+        //     },
+        //   });
+        // }
+        jsxPath.traverse({
+          JSXText(innerPath) {
+            // Thay đổi JSXText thành t('text')
+            const text = innerPath.node.value.trim();
+            if (text !== '') {
+              innerPath.replaceWith(createTranslationFunction(innerPath.node.value));
             }
           },
-          JSXElement(jsxPath) {
-            // Tìm các JSXText nodes
-            if (jsxPath.node.openingElement.name.name === 'TestTag') {
-              jsxPath.traverse({
-                JSXAttribute(attrPath) {
-                  if (attrPath.node.name.name === 'value') {
-                    const attrValue = attrPath.node.value;
-                    if (attrValue) {
-                      if (attrValue.type === 'StringLiteral') {
-                        const textValue = attrValue.value;
-                        attrPath.node.value = createTranslationFunction(textValue);
-                      } else if (attrValue.type === 'JSXExpressionContainer') {
-                        if (attrValue.expression.type === 'StringLiteral') {
-                          const textValue = attrValue.expression.value;
-                          attrPath.node.value = createTranslationFunction(textValue);
-                        } else if (attrValue.expression.type === 'Identifier') {
-                          const identifierName = attrValue.expression.name;
-                          attrPath.node.value = createTranslationFunction(identifierName, 'var');
-                        }
-                      }
-                    }
-                  }
-                },
-              });
-            }
-            jsxPath.traverse({
-              JSXText(innerPath) {
-                // Thay đổi JSXText thành t('text')
-                const text = innerPath.node.value.trim();
-                if (text !== '') {
-                  innerPath.replaceWith(createTranslationFunction(innerPath.node.value));
-                }
-              },
-              JSXExpressionContainer(innerPath) {
-                if (innerPath.node.expression.type === 'Identifier') {
-                  // Thay đổi JSXExpressionContainer thành t(name)
-                  innerPath.replaceWith(createTranslationFunction(innerPath.node.expression.name, 'var'));
-                } else if (innerPath.node.expression.type === 'StringLiteral') {
-                  innerPath.replaceWith(createTranslationFunction(innerPath.node.expression.value));
-                }
-              },
-            });
+          JSXExpressionContainer(innerPath) {
+            if (innerPath.node.expression.type === 'Identifier') {
+              // Thay đổi JSXExpressionContainer thành t(name)
+              innerPath.replaceWith(createTranslationFunction(innerPath.node.expression.name, 'var'));
+            } else if (innerPath.node.expression.type === 'StringLiteral') {
+              innerPath.replaceWith(createTranslationFunction(innerPath.node.expression.value));
+            } 
+            // else if (innerPath.node.expression.type === 'TemplateLiteral'
+            //   && innerPath.node.expression.quasis.length === 1) {
+            //   const templateValue = innerPath.node.expression.quasis[0].value.raw;
+            //   innerPath.replaceWith(createTranslationFunction(templateValue));
+            // }
           },
         });
       }
-    },
+    })
+  }
+  traverse(ast, {
+    FunctionDeclaration: handleComponent,
+    FunctionExpression: handleComponent,
   });
 
   content = generate(ast).code;
@@ -160,7 +188,7 @@ function processComponents(fileContent, filePath) {
     });
     traverse(ast, {
       FunctionDeclaration(path) {
-        if (path.node.id.name === mainComponentName) {
+        if (!path.findParent(path => path.isFunction())) { // function cấp 1
           const functionBody = path.get('body');
           const newLineNode = t.expressionStatement(t.identifier('\n\tconst { t } = useTranslation()'));
           functionBody.unshiftContainer('body', newLineNode);
@@ -172,27 +200,33 @@ function processComponents(fileContent, filePath) {
   }
 
   writeFile(content, filePath);
+  updateJsonFile();
 }
 
-async function updateJsonFile() {
+function updateJsonFile() {
   if (Object.keys(newTranslations).length === 0) {
     return;
   }
 
-  const jsonFilePath = './output/lang.json';
+  const outputFolder = './output';
+  const jsonFilePath = `./${outputFolder}/lang.json`;
+  if (!fs.existsSync(outputFolder)) {
+    fs.mkdirSync(outputFolder);
+  }
+
   let existingTranslations = {};
   if (fs.existsSync(jsonFilePath)) {
     const jsonContent = fs.readFileSync(jsonFilePath, 'utf8');
     existingTranslations = JSON.parse(jsonContent);
   }
-  
+
   const combinedTranslations = { ...existingTranslations, ...newTranslations };
   console.log({ existingTranslations, newTranslations });
   fs.writeFileSync(jsonFilePath, JSON.stringify(combinedTranslations, null, 2), 'utf8');
 }
 
 async function writeFile(content, filePath) {
-  const formattedCode = await prettier.format(content, { parser: 'babel' });
+  const formattedCode = await prettier.format(content, { parser: 'babel', trailingComma: 'none' });
   fs.writeFileSync(filePath, formattedCode, 'utf8');
 }
 
@@ -221,15 +255,10 @@ function processDirectory(directoryPath) {
   });
 }
 
-function loadConfig() {
-
-}
 
 function main() {
-  loadConfig();
   const directoryPath = './project';
   processDirectory(directoryPath);
-  updateJsonFile();
 }
 
 main();
