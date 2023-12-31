@@ -119,35 +119,38 @@ function processComponents(fileContent, filePath) {
       JSXElement(jsxPath) {
         // Tìm các JSXText nodes
         const tagName = jsxPath.node.openingElement.name.name;
-        // if (specFields[tagName]) {
-        //   jsxPath.traverse({
-        //     JSXAttribute(attrPath) {
-        //       if (specFields[tagName].includes(attrPath.node.name.name)) {
-        //         const attrValue = attrPath.node.value;
-        //         const expression = attrValue.expression;
-        //         if (attrValue) {
-        //           if (attrValue.type === 'StringLiteral') {
-        //             const textValue = attrValue.value;
-        //             attrPath.node.value = createTranslationFunction(textValue);
-        //           } else if (attrValue.type === 'JSXExpressionContainer') {
-        //             if (expression.type === 'StringLiteral') {
-        //               const textValue = expression.value;
-        //               attrPath.node.value = createTranslationFunction(textValue);
-        //             } else if (expression.type === 'Identifier') {
-        //               const identifierName = expression.name;
-        //               attrPath.node.value = createTranslationFunction(identifierName, 'var');
-        //             } else if (expression.type === 'MemberExpression' || expression.type === 'TemplateLiteral') {
-        //               const memberExpression = generate(expression).code;
-        //               attrPath.node.value = createTranslationFunction(memberExpression, 'var');
-        //             }
-        //           }
-        //         }
-        //       }
-        //     },
-        //   });
-        // }
+        if (specFields[tagName]) {
+          jsxPath.traverse({
+            JSXAttribute(attrPath) {
+              if (specFields[tagName].includes(attrPath.node.name.name)) {
+                const attrValue = attrPath.node.value;
+                const expression = attrValue.expression;
+                if (attrValue) {
+                  if (attrValue.type === 'StringLiteral') {
+                    const textValue = attrValue.value;
+                    attrPath.node.value = createTranslationFunction(textValue);
+                  } else if (attrValue.type === 'JSXExpressionContainer') {
+                    if (expression.type === 'StringLiteral') {
+                      const textValue = expression.value;
+                      attrPath.node.value = createTranslationFunction(textValue);
+                    } else if (expression.type === 'Identifier') {
+                      const identifierName = expression.name;
+                      attrPath.node.value = createTranslationFunction(identifierName, 'var');
+                    } else if (expression.type === 'MemberExpression' || expression.type === 'TemplateLiteral') {
+                      const memberExpression = generate(expression).code;
+                      attrPath.node.value = createTranslationFunction(memberExpression, 'var');
+                    }
+                  }
+                }
+              }
+            },
+          });
+        }
         jsxPath.traverse({
           JSXText(innerPath) {
+            if (!innerPath.parent?.children?.includes(innerPath.node)) {
+              return;
+            }
             // Thay đổi JSXText thành t('text')
             const text = innerPath.node.value.trim();
             if (text !== '') {
@@ -155,17 +158,20 @@ function processComponents(fileContent, filePath) {
             }
           },
           JSXExpressionContainer(innerPath) {
+            if (!innerPath.parent?.children?.includes(innerPath.node)) {
+              return;
+            }
             if (innerPath.node.expression.type === 'Identifier') {
               // Thay đổi JSXExpressionContainer thành t(name)
               innerPath.replaceWith(createTranslationFunction(innerPath.node.expression.name, 'var'));
             } else if (innerPath.node.expression.type === 'StringLiteral') {
               innerPath.replaceWith(createTranslationFunction(innerPath.node.expression.value));
             } 
-            // else if (innerPath.node.expression.type === 'TemplateLiteral'
-            //   && innerPath.node.expression.quasis.length === 1) {
-            //   const templateValue = innerPath.node.expression.quasis[0].value.raw;
-            //   innerPath.replaceWith(createTranslationFunction(templateValue));
-            // }
+            else if (innerPath.node.expression.type === 'TemplateLiteral'
+              && innerPath.node.expression.quasis.length === 1) {
+              const templateValue = innerPath.node.expression.quasis[0].value.raw;
+              innerPath.replaceWith(createTranslationFunction(templateValue));
+            }
           },
         });
       }
@@ -257,7 +263,7 @@ function processDirectory(directoryPath) {
 
 
 function main() {
-  const directoryPath = './project';
+  const directoryPath = './testProject';
   processDirectory(directoryPath);
 }
 
